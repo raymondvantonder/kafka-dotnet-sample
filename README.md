@@ -1,2 +1,2 @@
-# kafka-dotnet-sample
-Simple Kafka producer and consumer using on confluent dotnet client
+t# kafka-dotnet-sample
+Simple Kafka producer and consumer using the confluent dotnet client
