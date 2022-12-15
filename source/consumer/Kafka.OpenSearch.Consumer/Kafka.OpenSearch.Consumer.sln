@@ -1,0 +1,16 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Kafka.OpenSearch.Consumer", "Kafka.OpenSearch.Consumer\Kafka.OpenSearch.Consumer.csproj", "{46245B2C-FE87-44CB-ACD5-9D351C41D63B}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{46245B2C-FE87-44CB-ACD5-9D351C41D63B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{46245B2C-FE87-44CB-ACD5-9D351C41D63B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{46245B2C-FE87-44CB-ACD5-9D351C41D63B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{46245B2C-FE87-44CB-ACD5-9D351C41D63B}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
