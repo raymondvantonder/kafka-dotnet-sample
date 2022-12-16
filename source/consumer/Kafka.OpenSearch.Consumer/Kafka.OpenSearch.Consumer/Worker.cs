@@ -3,28 +3,100 @@ using Confluent.Kafka;
 using Kafka.OpenSearch.Consumer.Models;
 using OpenSearch.Client;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Configuration;
 
 namespace Kafka.OpenSearch.Consumer;
 
 public class Worker : BackgroundService
 {
+    private readonly IConfiguration _configuration;
+
+    public Worker(IConfiguration configuration)
+    {
+        _configuration = configuration;
+    }
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var openSearchClient = CreateOpenSearchClient();
+        var opensearchUrl = _configuration["OpenSearch:Url"];
 
-        string wikimediaIndexName = "wikimedia";
+        var openSearchClient = CreateOpenSearchClient(opensearchUrl);
 
-        var wikiMediaIndex = await openSearchClient.Indices.ExistsAsync(wikimediaIndexName, ct: stoppingToken);
+        var wikimediaIndexName = _configuration["OpenSearch:Index"];
 
-        if (wikiMediaIndex == null || !wikiMediaIndex.Exists)
+        var indexCreated = await CreateOpenSearchIndex(openSearchClient, wikimediaIndexName, stoppingToken);
+
+        if (!indexCreated)
         {
-            var response = await openSearchClient.Indices.CreateAsync(wikimediaIndexName, ct: stoppingToken);
+            Console.WriteLine($"Failed to create index [{wikimediaIndexName}] in open search.");
+            return;
         }
 
+        var bootstrapServer = _configuration["Kafka:BootstrapServers"];
+        var groupId = _configuration["Kafka:GroupId"];
+        var topic = _configuration["Kafka:Topic"];
+
+        var consumer = CreateKafkaConsumer(bootstrapServer, groupId, topic);
+
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            try
+            {
+                Console.WriteLine("Polling..");
+
+                var consumeResult = consumer.Consume(3000);
+
+                if (consumeResult == null)
+                {
+                    Console.WriteLine("Nothing to process..");
+                    continue;
+                }
+
+                Console.WriteLine(consumeResult.Offset.Value);
+
+                WikimediatDetails wikimediaDetails = null;
+
+                try
+                {
+                    Console.WriteLine($"Deserializing: {consumeResult.Message.Value}");
+                    wikimediaDetails = JsonSerializer.Deserialize<WikimediatDetails>(consumeResult.Message.Value, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                }
+                catch (JsonException)
+                {
+                    Console.WriteLine($"Bad json recieved. Skipping. \n {consumeResult.Message.Value}");
+                    continue;
+                }
+
+                var indexRequest = new IndexRequest<WikimediatDetails>(wikimediaDetails, wikimediaIndexName, wikimediaDetails.Meta.Id);
+
+                var response = await openSearchClient.IndexAsync<WikimediatDetails>(indexRequest, stoppingToken);
+
+                if (!response.IsValid)
+                {
+                    Console.WriteLine("Failed to send data to open search index.");
+                }
+                else
+                {
+                    Console.WriteLine(response.Id);
+                }
+
+                consumer.StoreOffset(consumeResult);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(ex.Message);
+            }
+        }
+
+        consumer.Close();
+    }
+
+    private IConsumer<Ignore, string> CreateKafkaConsumer(string bootstrapServers, string groupId, string topic)
+    {
         var config = new ConsumerConfig
         {
-            BootstrapServers = "127.0.0.1:9092",
-            GroupId = "test-group",
+            BootstrapServers = bootstrapServers,
+            GroupId = groupId,
             AutoOffsetReset = AutoOffsetReset.Earliest,
             EnableAutoCommit = true,
             EnableAutoOffsetStore = false
@@ -32,53 +104,27 @@ public class Worker : BackgroundService
 
         var consumer = new ConsumerBuilder<Ignore, string>(config).Build();
 
-        consumer.Subscribe("wikimedia_data");
+        consumer.Subscribe(topic);
 
-        
-
-        while (!stoppingToken.IsCancellationRequested)
-        {
-            var consumeResult = consumer.Consume(3000);
-
-            if (consumeResult == null)
-            {
-                Console.WriteLine("Nothing to process..");
-                continue;
-            }
-
-            Console.WriteLine(consumeResult.Offset.Value);
-
-            WikimediatDetails wikimediatDetails = null;
-
-            try
-            {
-                wikimediatDetails = JsonSerializer.Deserialize<WikimediatDetails>(consumeResult.Message.Value, new JsonSerializerOptions { PropertyNameCaseInsensitive = true, NumberHandling = System.Text.Json.Serialization.JsonNumberHandling.WriteAsString });
-            }
-            catch (Exception e)
-            {
-                Console.WriteLine($"Bad json recieved. Skipping. \n {consumeResult.Message.Value}");
-                continue;
-            }
-
-            var response = await openSearchClient.IndexAsync<WikimediatDetails>(wikimediatDetails, i => i.Index(wikimediaIndexName), stoppingToken);
-
-            if (!response.IsValid)
-            {
-                Console.WriteLine("Failed to send data to open search index.");
-            }
-            else
-            {
-                Console.WriteLine(response.Id);
-            }
-
-            consumer.StoreOffset(consumeResult);
-        }
-
-        consumer.Close();
+        return consumer;
     }
 
-    private static IOpenSearchClient CreateOpenSearchClient()
+    private async Task<bool> CreateOpenSearchIndex(IOpenSearchClient openSearchClient, string indexName, CancellationToken cancellationToken)
     {
-        return new OpenSearchClient(new Uri("http://localhost:9200"));
+        var wikiMediaIndex = await openSearchClient.Indices.ExistsAsync(indexName, ct: cancellationToken);
+
+        if (wikiMediaIndex == null || !wikiMediaIndex.Exists)
+        {
+            var response = await openSearchClient.Indices.CreateAsync(indexName, ct: cancellationToken);
+
+            return response.IsValid;
+        }
+
+        return wikiMediaIndex.Exists;
+    }
+
+    private IOpenSearchClient CreateOpenSearchClient(string url)
+    {
+        return new OpenSearchClient(new Uri(url));
     }
 }
