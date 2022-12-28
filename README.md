@@ -1,5 +1,5 @@
 # kafka-dotnet-sample
-Simple Kafka producer and consumer using the confluent dotnet client
+Simple Kafka producer and consumer using the confluent dotnet client.
 
 ## Installation
 Use homebrew to install docker, java, kafka and zookeeper on your machine. 
